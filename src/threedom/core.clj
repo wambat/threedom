@@ -1,4 +1,19 @@
-(ns threedom.core)
+(ns threedom.core
+  (:import [com.jme3 app.SimpleApplication
+            material.Material
+            material.RenderState
+            material.RenderState$BlendMode
+            light.DirectionalLight
+            scene.Geometry
+            scene.Spatial
+            system.AppSettings
+            system.JmeSystem
+            util.SkyFactory
+            renderer.queue.RenderQueue$Bucket
+            scene.shape.Box
+            scene.Node
+            math.Vector3f
+            math.ColorRGBA]))
 
 (defn construct [klass & args]
   (clojure.pprint/pprint "Constructing")
@@ -12,7 +27,9 @@
   (clojure.pprint/pprint name)
   (clojure.pprint/pprint pklasses)
   (try
-    (if-let [m (.getMethod klass name (into-array pklasses))]
+    (if-let [m (if (> (count pklasses) 0)
+                 (.getMethod klass name (into-array pklasses))
+                 (.getMethod klass name nil))]
       m)
     (catch Exception e
       (do
@@ -49,7 +66,10 @@
         (clojure.pprint/pprint "S")
         ))
     (doseq [c children]
-      (.attachChild node (apply make-node c)))
+      (let [cnode (apply make-node c)]
+        (if (instance? Spatial cnode)
+          (.attachChild node cnode)
+          (.addLight node cnode))))
     node))
 
 (defn materialize-diffs [cm owner old-state new-state options]
@@ -58,7 +78,10 @@
   (clojure.pprint/pprint "State to:")
   (clojure.pprint/pprint new-state)
   (doseq [i new-state]
-    (.attachChild owner (apply make-node i))))
+    (let [node (apply make-node i)]
+      (if (instance? Spatial node)
+        (.attachChild owner node)
+        (.addLight owner node)))))
 
 (defn handle-diffs
   ;; ([f target state]
