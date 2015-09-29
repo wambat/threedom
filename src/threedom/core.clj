@@ -33,7 +33,9 @@
       m)
     (catch Exception e
       (do
-        (if-let [spklasses (map #(.getSuperclass %) pklasses)]
+        (if-let [spklasses (concat (butlast pklasses) [(.getSuperclass (last pklasses))])
+                 ;;(map #(.getSuperclass %) pklasses)
+                 ]
           (if (not= pklasses spklasses)
             (find-method klass name spklasses)))))))
 
