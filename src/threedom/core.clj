@@ -2,6 +2,7 @@
   (:require [clojure.data :as cd]
             [clojure.set :as cs]
             [clojure.pprint :refer [pprint]]
+            [clojure.core.async :refer [mult poll! go tap untap chan alt! >!! <!! filter> onto-chan pipe close!] :as async]
             [com.rpl.specter :as sp])
   (:import [com.jme3 app.SimpleApplication
             material.Material
@@ -18,6 +19,8 @@
             scene.Node
             math.Vector3f
             math.ColorRGBA]))
+
+(def update-chan (chan 1))
 
 (defn construct [klass & args]
   ;; (clojure.pprint/pprint "Constructing")
@@ -46,6 +49,11 @@
 (defprotocol IRender
   (render [this]))
 
+(defn get-child-by-name [node name]
+  (pprint "GetChild")
+  (pprint name)
+  (.getChild node (first name)))
+
 (declare make-node)
 
 (defn set-node-props! [node setters]
@@ -65,7 +73,7 @@
   ;; (clojure.pprint/pprint "Konstructor:")
   ;; (clojure.pprint/pprint konstructor)
   (let [node (apply construct klass konstructor)]
-    (set-node-props! [node setters])
+    (set-node-props! node setters)
     (doseq [c children]
       (let [cnode (apply make-node c)]
         (if (instance? Spatial cnode)
@@ -73,7 +81,7 @@
           (.addLight node cnode)))) node))
 
 (defn detach-node! [node klass name]
-  (.detachChildNamed node name))
+  (.detachChildNamed node (first name)))
 
 (defn make-nodes! [cm owner state]
   ;; (clojure.pprint/pprint "State from:")
@@ -111,7 +119,7 @@
     (doseq [d s-to-delete]
       (apply detach-node! node d))
 
-    (doall (mapv #(update-props! (.getChild node (get %1 1 "NOT_FOUND"))
+    (doall (mapv #(update-props! (get-child-by-name node (get %1 1 "NOT_FOUND"))
                                  (get %1 2 {})
                                  (get %2 2 {}))
                  to-update-old-children
@@ -119,7 +127,7 @@
     (make-nodes! cm node to-create)
     (doall (mapv #(materialize-node-diffs!
                    cm
-                   (.getChild node (get %1 1 "NOT_FOUND"))
+                   (get-child-by-name node (get %1 1 "NOT_FOUND"))
                    (get %1 3 [])
                    (get %2 3 []))
                  to-update-old-children
@@ -144,7 +152,13 @@
 
   (add-watch value :watcher
              (fn [key atm old-state new-state]
-               (handle-diffs f target old-state new-state options)
+               (>!! update-chan [f target old-state new-state options])
+               ;;(handle-diffs f target old-state new-state options)
                ))
-  (handle-diffs f target nil @value options)
+  (>!! update-chan [f target nil @value options])
+  ;;(handle-diffs f target nil @value options)
   )
+
+(defn process-state-updates [app tpf]
+  (if-let [vals (poll! update-chan)]
+    (apply handle-diffs vals)))
