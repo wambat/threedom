@@ -20,44 +20,65 @@
             math.Vector3f
             math.ColorRGBA]))
 
+(defn dbg [v]
+  ;;(clojure.pprint/pprint v)
+  )
 (def update-chan (chan 1))
 
 (defn construct [klass & args]
-  ;; (clojure.pprint/pprint "Constructing")
-  ;; (clojure.pprint/pprint klass)
-  ;; (clojure.pprint/pprint args)
+  ;; (dbg "Constructing")
+  ;; (dbg klass)
+  ;; (dbg args)
   (clojure.lang.Reflector/invokeConstructor klass (into-array Object args)))
 
+(defn slow-find-method [klass name pklasses]
+  (dbg "Slow Find method")
+  (dbg klass)
+  (dbg name)
+  (dbg pklasses)
+  (let [methods (.getMethods klass)
+        fmethods (filter #(= (.getName %) name) methods)]
+    (if (= (count fmethods) 1)
+      (first fmethods)
+      nil;;(throw (ex-info "No method found" {:name name :klass klass}))
+      )))
+
 (defn find-method [klass name pklasses]
-  ;; (clojure.pprint/pprint "Find method")
-  ;; (clojure.pprint/pprint klass)
-  ;; (clojure.pprint/pprint name)
-  ;; (clojure.pprint/pprint pklasses)
-  (try
-    (if-let [m (if (> (count pklasses) 0)
-                 (.getMethod klass name (into-array pklasses))
-                 (.getMethod klass name nil))]
-      m)
-    (catch Exception e
-      (do
-        (if-let [spklasses (concat (butlast pklasses) [(.getSuperclass (last pklasses))])
-                 ;;(map #(.getSuperclass %) pklasses)
-                 ]
-          (if (not= pklasses spklasses)
-            (find-method klass name spklasses)))))))
+  (dbg "Find method")
+  (dbg klass)
+  (dbg name)
+  (dbg pklasses)
+  (if-let [s (slow-find-method klass name pklasses)]
+    s
+    (try
+      (if-let [m (if (> (count pklasses) 0)
+                   (.getMethod klass name (into-array pklasses))
+                   (.getMethod klass name nil))]
+        m)
+      (catch Exception e
+        (do
+          (if-let [spklasses (concat (butlast pklasses) [(.getSuperclass (last pklasses))])
+                   ;;(map #(.getSuperclass %) pklasses)
+                   ]
+            (if (not= pklasses spklasses)
+              (find-method klass name spklasses))))))))
 
 (defprotocol IRender
   (render [this]))
 
 (defn get-child-by-name [node name]
-  (pprint "GetChild")
-  (pprint name)
+  (dbg "GetChild")
+  (dbg name)
   (.getChild node (first name)))
 
 (declare make-node)
 
 (defn set-node-props! [node setters]
   (doseq [[meth vals] (into [] setters)]
+    (dbg "Meth")
+    (dbg meth)
+    (dbg "Vals")
+    (dbg vals)
     (let [s (name meth)
           vs (map #(if (and
                         (sequential? %)
@@ -68,10 +89,10 @@
       (.invoke met node (to-array vs)))))
 
 (defn make-node [klass konstructor & [setters children]]
-  ;; (clojure.pprint/pprint "Make node:")
-  ;; (clojure.pprint/pprint klass)
-  ;; (clojure.pprint/pprint "Konstructor:")
-  ;; (clojure.pprint/pprint konstructor)
+  (dbg "Make node:")
+  (dbg klass)
+  (dbg "Konstructor:")
+  (dbg konstructor)
   (let [node (apply construct klass konstructor)]
     (set-node-props! node setters)
     (doseq [c children]
@@ -84,10 +105,10 @@
   (.detachChildNamed node (first name)))
 
 (defn make-nodes! [cm owner state]
-  ;; (clojure.pprint/pprint "State from:")
-  ;; (clojure.pprint/pprint old-state)
-  ;; (clojure.pprint/pprint "State to:")
-  ;; (clojure.pprint/pprint new-state)
+  ;; (dbg "State from:")
+  ;; (dbg old-state)
+  ;; (dbg "State to:")
+  ;; (dbg new-state)
   (doseq [i state]
     (let [node (apply make-node i)]
       (if (instance? Spatial node)
@@ -95,10 +116,10 @@
         (.addLight owner node)))))
 
 (defn update-props! [node old-state new-state]
-  (clojure.pprint/pprint "State from:")
-  (clojure.pprint/pprint old-state)
-  (clojure.pprint/pprint "State to:")
-  (clojure.pprint/pprint new-state)
+  (dbg "State from:")
+  (dbg old-state)
+  (dbg "State to:")
+  (dbg new-state)
   (let [[_ props-to-update _] (cd/diff old-state new-state)
         pkeys (keys props-to-update)]
     (set-node-props! node (select-keys new-state pkeys))))
@@ -143,7 +164,7 @@
                       (render cm-old)
                       [])
          r-new-state (render cm-new)]
-     (clojure.pprint/pprint "Rebuild")
+     (dbg "Rebuild")
      (materialize-node-diffs! cm-new owner r-old-state r-new-state))))
 
 (defn root
