@@ -88,6 +88,10 @@
           met (find-method (.getClass node) s (map #(.getClass %) vs))]
       (.invoke met node (to-array vs)))))
 
+(defn make-component! [owner cm data options]
+  (let [c (cm data owner options)]
+    (render c)))
+
 (defn make-node [klass konstructor & [setters children]]
   (dbg "Make node:")
   (dbg klass)
@@ -96,7 +100,9 @@
   (let [node (apply construct klass konstructor)]
     (set-node-props! node setters)
     (doseq [c children]
-      (let [cnode (apply make-node c)]
+      (let [cnode (if (get (meta c) :component)
+                    (apply make-component! node c)
+                    (apply make-node c))]
         (if (instance? Spatial cnode)
           (.attachChild node cnode)
           (.addLight node cnode)))) node))
@@ -110,7 +116,9 @@
   ;; (dbg "State to:")
   ;; (dbg new-state)
   (doseq [i state]
-    (let [node (apply make-node i)]
+    (let [node (if (get (meta i) :component)
+                 (apply make-component! owner i)
+                 (apply make-node i))]
       (if (instance? Spatial node)
         (.attachChild owner node)
         (.addLight owner node)))))
@@ -137,6 +145,8 @@
                                     old-state)
         to-update-new-children (sp/select [sp/ALL #(contains? s-old (take 2 %))]
                                     new-state)]
+    (dbg "To create")
+    (dbg to-create)
     (doseq [d s-to-delete]
       (apply detach-node! node d))
 
@@ -153,6 +163,9 @@
                    (get %2 3 []))
                  to-update-old-children
                  to-update-new-children))))
+
+(defn build [cm data options]
+  (with-meta [cm data options] {:component true}))
 
 (defn handle-diffs
   ;; ([f target state]
