@@ -20,8 +20,11 @@
             math.Vector3f
             math.ColorRGBA]))
 
+(declare make-node)
+(declare materialize-node-diffs!)
+
 (defn dbg [v]
-  ;;(clojure.pprint/pprint v)
+  (clojure.pprint/pprint v)
   )
 (def update-chan (chan 1))
 
@@ -71,8 +74,6 @@
   (dbg name)
   (.getChild node (first name)))
 
-(declare make-node)
-
 (defn set-node-props! [node setters]
   (doseq [[meth vals] (into [] setters)]
     (dbg "Meth")
@@ -90,7 +91,7 @@
 
 (defn make-component! [owner cm data options]
   (let [c (cm data owner options)]
-    (render c)))
+    (materialize-node-diffs! cm owner [] (render c))))
 
 (defn make-node [klass konstructor & [setters children]]
   (dbg "Make node:")
@@ -100,15 +101,25 @@
   (let [node (apply construct klass konstructor)]
     (set-node-props! node setters)
     (doseq [c children]
-      (let [cnode (if (get (meta c) :component)
-                    (apply make-component! node c)
-                    (apply make-node c))]
-        (if (instance? Spatial cnode)
-          (.attachChild node cnode)
-          (.addLight node cnode)))) node))
+      (if (get (meta c) :component)
+        (apply make-component! node c)
+        (let [cnode (apply make-node c)]
+          (if (instance? Spatial cnode)
+            (.attachChild node cnode)
+            (.addLight node cnode))))) node))
+
+(defn detach-component! [node old-cm]
+  (dbg "To delete CMP>>>")
+  (dbg old-cm)
+  (let [[f data options ] old-cm
+        rf (f data node options)]
+    (materialize-node-diffs! rf
+                             node
+                             (render rf) [])))
 
 (defn detach-node! [node klass name]
   (.detachChildNamed node (first name)))
+
 
 (defn make-nodes! [cm owner state]
   ;; (dbg "State from:")
@@ -116,12 +127,12 @@
   ;; (dbg "State to:")
   ;; (dbg new-state)
   (doseq [i state]
-    (let [node (if (get (meta i) :component)
-                 (apply make-component! owner i)
-                 (apply make-node i))]
-      (if (instance? Spatial node)
-        (.attachChild owner node)
-        (.addLight owner node)))))
+    (if (get (meta i) :component)
+      (apply make-component! owner i)
+      (let [node (apply make-node i)]
+        (if (instance? Spatial node)
+          (.attachChild owner node)
+          (.addLight owner node))))))
 
 (defn update-props! [node old-state new-state]
   (dbg "State from:")
@@ -132,27 +143,46 @@
         pkeys (keys props-to-update)]
     (set-node-props! node (select-keys new-state pkeys))))
 
+
+(defn update-component! [node old-cm new-cm]
+  (let [[f data options ] old-cm
+        [f' data' options'] new-cm
+        rf (f data node options)
+        rf' (f' data' node options')]
+    (materialize-node-diffs! rf'
+                             node
+                             (render rf)
+                             (render rf'))))
+
 (defn materialize-node-diffs! [cm node old-state new-state]
   (let [s-old (into #{} (map #(take 2 %) old-state))
         s-new (into #{} (map #(take 2 %) new-state))
         s-to-delete (cs/difference s-old s-new)
         s-to-add (cs/difference s-new s-old)
-        ;; to-delete (sp/select [sp/ALL (sp/collect-one) (sp/srange 0 2) #(not (contains? s-new %))]
-        ;;            old-state)
+        to-delete (sp/select [sp/ALL (sp/collect-one) (sp/srange 0 2) #(not (contains? s-new %))]
+                   old-state)
         to-create (sp/select [sp/ALL #(not (contains? s-old (take 2 %)))]
                                 new-state)
         to-update-old-children (sp/select [sp/ALL #(contains? s-new (take 2 %))]
                                     old-state)
         to-update-new-children (sp/select [sp/ALL #(contains? s-old (take 2 %))]
                                     new-state)]
-    (dbg "To create")
-    (dbg to-create)
     (doseq [d s-to-delete]
-      (apply detach-node! node d))
+      (if (get (meta d) :component)
+        (detach-component! node d)
+        (apply detach-node! node d)))
 
-    (doall (mapv #(update-props! (get-child-by-name node (get %1 1 "NOT_FOUND"))
-                                 (get %1 2 {})
-                                 (get %2 2 {}))
+    (doall (mapv (fn [o n] (if (get (meta n) :component)
+                            (do
+                              (dbg "I'm compomnent")
+                              (dbg n)
+                              (update-component! node o n))
+                            (do
+                              (dbg "I'm node")
+                              (dbg n)
+                              (update-props! (get-child-by-name node (get o 1 "NOT_FOUND"))
+                                              (get o 2 {})
+                                              (get n 2 {})))))
                  to-update-old-children
                  to-update-new-children))
     (make-nodes! cm node to-create)
@@ -183,7 +213,7 @@
 (defn root
   "Mount rendering loop on node"
   [f value {:keys [target] :as options}]
-
+  (remove-watch value :watcher)
   (add-watch value :watcher
              (fn [key atm old-state new-state]
                (>!! update-chan [f target old-state new-state options])
