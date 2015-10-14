@@ -130,9 +130,6 @@
             (if (instance? Spatial node)
               (.attachChild owner node)
               (.addLight owner node))
-
-            (dbg "State to:")
-            (dbg obj-tree)
             obj-tree))
         state))
 
@@ -228,7 +225,7 @@
   "Mount rendering loop on node"
   [component state-atom {:keys [target] :as options}]
   (remove-watch state-atom :watcher)
-  (comment add-watch state-atom :watcher
+  (add-watch state-atom :watcher
              (fn [key atm old-state new-state]
                (>!! update-chan [component target @last-obj-tree new-state options])
                ;;(handle-diffs f target old-state new-state options)
