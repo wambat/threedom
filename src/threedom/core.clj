@@ -25,6 +25,17 @@
 (declare materialize-component-diffs!)
 (declare materialize-diffs!)
 
+(defn dbgm [obj]
+  (let [orig-dispatch clojure.pprint/*print-pprint-dispatch*]
+    (clojure.pprint/with-pprint-dispatch 
+      (fn [o]
+        (when (meta o)
+          (print "^")
+          (orig-dispatch (meta o))
+          (clojure.pprint/pprint-newline :fill))
+        (orig-dispatch o))
+      (clojure.pprint/pprint obj))))
+
 (defn dbg [v]
   (clojure.pprint/pprint v)
   )
@@ -92,15 +103,12 @@
          (ex-info "Set Node Props err" {:node node
                                         :setters setters}))))))
 
-(defn make-component! [owner cm data options]
-  (let [c (cm data owner options)]
-    (materialize-node-diffs! cm owner [] (render c))))
-
 (defn make-node [klass konstructor & [setters children]]
   ;; (dbg "Make node:")
   ;; (dbg klass)
   ;; (dbg "Konstructor:")
   ;; (dbg konstructor)
+
   (let [node (apply construct klass konstructor)]
     (set-node-props! node setters)
     {:obj-tree [klass konstructor setters (if-not (empty? children)
@@ -108,7 +116,7 @@
      :node node}))
 
 (defn detach-component! [node old-cm]
-  ;; (dbg "To delete CMP>>>")
+  ;;(dbg "To delete CMP>>>")
   ;; (dbg old-cm)
   (let [[f data options ] old-cm
         rf (f data node options)]
@@ -121,6 +129,7 @@
 
 
 (defn make-nodes! [owner state]
+  (dbg "Make Nodes")
   ;; (dbg "State from:")
   ;; (dbg old-state)
   ;; (dbg "State to:")
@@ -134,6 +143,7 @@
         state))
 
 (defn update-props! [node old-state new-state]
+  (dbg "Update props")
   ;; (dbg "State from:")
   ;; (dbg old-state)
   ;; (dbg "State to:")
@@ -158,8 +168,10 @@
     (filter #(get (meta %) :component) obj-tree))))
 
 (defn materialize-component-diffs! [owner old-obj-tree comps]
-  ;; (dbg "Mat.Diff")
-  ;; (dbg comps)
+  (dbg "Mat.Diff")
+  (dbg old-obj-tree)
+  (dbg "New")
+  (dbg comps)
   (letfn [(inflate [component data options]
             ;; (dbg "Inflate")
             ;; (dbg component)
@@ -191,6 +203,14 @@
                                     old-obj-tree)
         to-update-new (sp/select [sp/ALL #(contains? s-old (take 2 %))]
                                     obj-tree)]
+
+    (dbg "s-old")
+    (dbg old-obj-tree)
+    (dbg s-old)
+    (dbg "s-new")
+    (dbg s-new)
+    (dbg "To Create")
+    (dbg to-create)
     (doseq [d s-to-delete]
       (apply detach-node! owner d))
     (let [created-obj-tree (concat (make-nodes! owner to-create)
@@ -236,4 +256,4 @@
 
 (defn process-state-updates [app tpf]
   (if-let [vals (poll! update-chan)]
-    (reset! last-obj-tree (apply build-root-component! vals))))
+    (dbgm (reset! last-obj-tree (apply build-root-component! vals)))))
