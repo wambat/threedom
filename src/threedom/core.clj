@@ -91,59 +91,62 @@
   (doseq [[meth vals] (into [] setters)]
     (try
       (let [s (name meth)
-            vs (map #(if (and
+            vs (mapv #(if (and
                           (sequential? %)
                           (>= (count %) 2))
-                       (:node (apply make-node %))
+                       (:node (make-node %))
                        %) vals)
-            met (find-method (.getClass node) s (map #(.getClass %) vs))]
+            met (find-method (.getClass node) s (mapv #(.getClass %) vs))]
         (.invoke met node (to-array vs)))
-      (catch Exception e
+      (catch NullPointerException e
         (throw
          (ex-info "Set Node Props err" {:node node
                                         :setters setters}))))))
 
-(defn make-node [klass konstructor & [setters children]]
+(defn make-node [[klass konstructor setters children :as data]]
+
   ;; (dbg "Make node:")
   ;; (dbg klass)
   ;; (dbg "Konstructor:")
   ;; (dbg konstructor)
 
-  (let [node (apply construct klass konstructor)]
+  (let [node (apply construct klass konstructor)
+        m (meta data)]
     (set-node-props! node setters)
-    {:obj-tree [klass konstructor setters (if-not (empty? children)
-                                            (materialize-diffs! node [] children))]
+    {:obj-tree (with-meta [klass konstructor setters (if-not (empty? children)
+                                                      (materialize-diffs! node [] children))]
+                 m)
      :node node}))
 
-(defn detach-component! [node old-cm]
-  ;;(dbg "To delete CMP>>>")
-  ;; (dbg old-cm)
-  (let [[f data options ] old-cm
-        rf (f data node options)]
-    (materialize-node-diffs! rf
-                             node
-                             (render rf) [])))
+(defn detach-node! [node descr]
 
-(defn detach-node! [node klass name]
-  (.detachChildNamed node (first name)))
+  ;; (dbg "Detaching")
+  ;; (dbg node)
+  ;; (dbg "Descr")
+  ;; (dbgm descr)
+  (.detachChildNamed node (get-in descr [1 0])))
 
 
 (defn make-nodes! [owner state]
-  (dbg "Make Nodes")
+  ;; (dbg "Make Nodes")
   ;; (dbg "State from:")
   ;; (dbg old-state)
   ;; (dbg "State to:")
   ;; (dbg new-state)
   (mapv (fn [i]
-          (let [{:keys [node obj-tree]} (apply make-node i)]
+          (let [{:keys [node obj-tree]} (make-node i)]
             (if (instance? Spatial node)
               (.attachChild owner node)
               (.addLight owner node))
+            ;; (dbg "Make Node!")
+            ;; (dbgm obj-tree)
+            ;; (dbg "From")
+            ;; (dbgm i)
             obj-tree))
         state))
 
 (defn update-props! [node old-state new-state]
-  (dbg "Update props")
+  ;;(dbg "Update props")
   ;; (dbg "State from:")
   ;; (dbg old-state)
   ;; (dbg "State to:")
@@ -168,10 +171,10 @@
     (filter #(get (meta %) :component) obj-tree))))
 
 (defn materialize-component-diffs! [owner old-obj-tree comps]
-  (dbg "Mat.Diff")
-  (dbg old-obj-tree)
-  (dbg "New")
-  (dbg comps)
+  ;; (dbg "Mat.Diff")
+  ;; (dbg old-obj-tree)
+  ;; (dbg "New")
+  ;; (dbg comps)
   (letfn [(inflate [component data options]
             ;; (dbg "Inflate")
             ;; (dbg component)
@@ -181,20 +184,18 @@
                ;; (dbg "CMP")
                ;; (dbg component)
                (with-meta (render c) {:component component})))]
-    (materialize-node-diffs! owner old-obj-tree (map (fn [[component data options]]
+    (materialize-node-diffs! owner old-obj-tree (mapv (fn [[component data options]]
                                                         (inflate
                                                          component
                                                          data
                                                          options)) comps))))
 
 (defn materialize-node-diffs! [owner old-obj-tree obj-tree]
-  ;; (dbg "TREE")
-  ;; (dbg obj-tree)
-  (let [s-old (into #{} (map #(take 2 %) old-obj-tree))
-        s-new (into #{} (map #(take 2 %) obj-tree))
+  (let [s-old (into #{} (mapv #(take 2 %) old-obj-tree))
+        s-new (into #{} (mapv #(take 2 %) obj-tree))
         s-to-delete (cs/difference s-old s-new)
         s-to-add (cs/difference s-new s-old)
-        to-delete (sp/select [sp/ALL (sp/collect-one) (sp/srange 0 2) #(not (contains? s-new %))]
+        to-delete (sp/select [sp/ALL #(not (contains? s-new (take 2 %)))]
                    old-obj-tree)
         to-create (sp/select [sp/ALL #(not (contains? s-old (take 2 %)))]
                                 obj-tree)
@@ -204,29 +205,43 @@
         to-update-new (sp/select [sp/ALL #(contains? s-old (take 2 %))]
                                     obj-tree)]
 
-    (dbg "s-old")
-    (dbg old-obj-tree)
-    (dbg s-old)
-    (dbg "s-new")
-    (dbg s-new)
-    (dbg "To Create")
-    (dbg to-create)
-    (doseq [d s-to-delete]
-      (apply detach-node! owner d))
-    (let [created-obj-tree (concat (make-nodes! owner to-create)
-                                   (map (fn [o n]
-                                          (update-props! (get-child-by-name owner (get o 1 "NOT_FOUND"))
-                                                         (get o 2 {})
-                                                         (get n 2 {}))
-                                          (materialize-diffs!
-                                           (get-child-by-name owner (get o 1 "NOT_FOUND"))
-                                           (get o 3 [])
-                                           (get n 3 [])))
-                                        to-update-old
-                                        to-update-new))]
+    ;; (dbg "old-obj-tree")
+    ;; (dbg old-obj-tree)
+    ;; (dbg "obj-tree")
+    ;; (dbg obj-tree)
+    ;; (dbg "s-old")
+    ;; (dbg s-old)
+    ;; (dbg "s-new")
+    ;; (dbg s-new)
+    ;; (dbg "S To delete")
+    ;; (dbgm s-to-delete)
+    ;; (dbg "To delete")
+    ;; (dbgm to-delete)
+    (doseq [d to-delete]
+      (detach-node! owner d))
+    (let [new-nodes-obj-tree (make-nodes! owner to-create)
+          updated-nodes-obj-tree
+          (mapv (fn [o n]
+                  (update-props! (get-child-by-name owner (get o 1 "NOT_FOUND"))
+                                 (get o 2 {})
+                                 (get n 2 {}))
+                  (let [old-c (get o 3 [])
+                        new-c (get n 3 [])]
+                    (if (or (not (empty? old-c))
+                            (not (empty? new-c)))
+                      (conj (into [] (take 3 n)) (materialize-diffs!
+                                        (get-child-by-name owner (get o 1 "NOT_FOUND"))
+                                        old-c
+                                        new-c))
+                      n)))
+                to-update-old
+                to-update-new)
+          new-obj-tree (concat new-nodes-obj-tree updated-nodes-obj-tree)]
       ;; (dbg "Created")
-      ;; (dbg created-obj-tree)
-      created-obj-tree)))
+      ;; (dbgm new-nodes-obj-tree)
+      ;; (dbg "Updated")
+      ;; (dbgm updated-nodes-obj-tree)
+      new-obj-tree)))
 
 (defn build [cm data options]
   (let [r (with-meta [cm data options] {:component true})]
@@ -256,4 +271,7 @@
 
 (defn process-state-updates [app tpf]
   (if-let [vals (poll! update-chan)]
-    (dbgm (reset! last-obj-tree (apply build-root-component! vals)))))
+    (do
+      (dbg ">>>>>>>>>>>>>")
+      ;;(dbgm (with-meta {:yo "oy"} {:mmmet "aaa!"}))
+      (dbgm (reset! last-obj-tree (apply build-root-component! vals))))))
