@@ -46,20 +46,35 @@
   ;; (deeb args)
   (clojure.lang.Reflector/invokeConstructor klass (into-array Object args)))
 
-(defn slow-find-method [klass name pklasses]
+(defn- args-satisfies [args types]
+  (and (= (count args)
+          (count types))
+       (every? (fn [[arg tp]]
+                 (let [tp (if (= (.getName tp) "float")
+                            java.lang.Float
+                            tp)]
+                   (instance? tp arg)))
+               (map (fn [a t]
+                      [a t]) args types))))
+
+(defn find-method [klass name args]
   ;; (deeb "Slow Find method")
   ;; (deeb klass)
   ;; (deeb name)
-  ;; (deeb pklasses)
+  (deeb "args")
+  (deeb args)
   (let [methods (.getMethods klass)
         fmethods (filter #(= (.getName %) name) methods)]
     (deeb fmethods)
-    (some #(if (= (count pklasses) (count (.getParameterTypes %)))
+    (some #(if (do
+                 (deeb (.getParameterTypes %))
+                 (deeb (mapv (fn [a] (.getClass a)) args))
+                 (args-satisfies args (.getParameterTypes %)))
              %
              nil) fmethods)
     ))
 
-(defn find-method [klass name pklasses]
+#_(defn find-method [klass name pklasses]
   (deeb "Find method")
   (deeb klass)
   (deeb name)
@@ -95,12 +110,17 @@
                          (>= (count %) 2))
                       (:node (make-node %))
                       %) vals)
-          met (find-method (.getClass node) s (mapv #(.getClass %) vs))]
+          met (find-method (.getClass node) s vs)]
       (try
         (.invoke met node (to-array vs))
         (catch NullPointerException e
           (throw
-           (ex-info "Set Node Props err" {:node node
+           (ex-info "Set Node Props NPE" {:node node
+                                          :met met
+                                          :params vs})))
+        (catch IllegalArgumentException e
+          (throw
+           (ex-info "Set Node Props ARG" {:node node
                                           :met met
                                           :params vs})))))))
 
