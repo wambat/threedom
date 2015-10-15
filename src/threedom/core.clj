@@ -103,6 +103,9 @@
   (.getChild node (first name)))
 
 (defn set-node-props! [node setters]
+  (if-not node
+    (throw (ex-info "Set Node Props NONODE" {:node node
+                                             :setters setters})))
   (doseq [[meth vals] (into [] setters)]
     (let [s (name meth)
           vs (mapv #(if (and
@@ -110,6 +113,7 @@
                          (>= (count %) 2))
                       (:node (make-node %))
                       %) vals)
+          
           met (find-method (.getClass node) s vs)]
       (try
         (.invoke met node (to-array vs))
