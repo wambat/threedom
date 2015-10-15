@@ -22,8 +22,6 @@
 (def cnt (atom 0))
 (def last-obj-tree (atom []))
 (declare make-node)
-(declare materialize-node-diffs!)
-(declare materialize-component-diffs!)
 (declare materialize-diffs!)
 
 (defn deebm [obj]
@@ -55,16 +53,17 @@
   ;; (deeb pklasses)
   (let [methods (.getMethods klass)
         fmethods (filter #(= (.getName %) name) methods)]
-    (if (= (count fmethods) 1)
-      (first fmethods)
-      nil;;(throw (ex-info "No method found" {:name name :klass klass}))
-      )))
+    (deeb fmethods)
+    (some #(if (= (count pklasses) (count (.getParameterTypes %)))
+             %
+             nil) fmethods)
+    ))
 
 (defn find-method [klass name pklasses]
-  ;; (deeb "Find method")
-  ;; (deeb klass)
-  ;; (deeb name)
-  ;; (deeb pklasses)
+  (deeb "Find method")
+  (deeb klass)
+  (deeb name)
+  (deeb pklasses)
   (if-let [s (slow-find-method klass name pklasses)]
     s
     (try
@@ -90,19 +89,20 @@
 
 (defn set-node-props! [node setters]
   (doseq [[meth vals] (into [] setters)]
-    (try
-      (let [s (name meth)
-            vs (mapv #(if (and
-                          (sequential? %)
-                          (>= (count %) 2))
-                       (:node (make-node %))
-                       %) vals)
-            met (find-method (.getClass node) s (mapv #(.getClass %) vs))]
-        (.invoke met node (to-array vs)))
-      (catch NullPointerException e
-        (throw
-         (ex-info "Set Node Props err" {:node node
-                                        :setters setters}))))))
+    (let [s (name meth)
+          vs (mapv #(if (and
+                         (sequential? %)
+                         (>= (count %) 2))
+                      (:node (make-node %))
+                      %) vals)
+          met (find-method (.getClass node) s (mapv #(.getClass %) vs))]
+      (try
+        (.invoke met node (to-array vs))
+        (catch NullPointerException e
+          (throw
+           (ex-info "Set Node Props err" {:node node
+                                          :met met
+                                          :params vs})))))))
 
 (defn make-node [[klass konstructor setters children :as data]]
 
@@ -121,7 +121,7 @@
 
 (defn detach-node! [node descr]
 
-  (deeb "Detaching")
+  ;; (deeb "Detaching")
   ;; (deeb node)
   ;; (deeb "Descr")
   ;; (deebm descr)
@@ -129,7 +129,7 @@
 
 
 (defn make-nodes! [owner state]
-  (deeb "Make Nodes")
+  ;; (deeb "Make Nodes")
   ;; (deeb "State from:")
   ;; (deeb state)
   ;; (deeb "State to:")
@@ -147,29 +147,21 @@
         state))
 
 (defn update-props! [node old-state new-state]
-  ;;(deeb "Update props")
+  ;; (deeb "Update props")
   ;; (deeb "State from:")
   ;; (deeb old-state)
   ;; (deeb "State to:")
   ;; (deeb new-state)
   (let [[_ props-to-update _] (cd/diff old-state new-state)
         pkeys (keys props-to-update)]
+
+    ;; (deeb "Update props")
+    ;; (deeb node)
+    ;; (deeb "setters")
+    ;; (deeb (select-keys new-state pkeys))
     (set-node-props! node (select-keys new-state pkeys))))
 
-(defn materialize-diffs! [owner old-obj-tree obj-tree]
-  ;; (deeb "Mat.Diff")
-  ;; (deeb obj-tree)
-  (let [ont (remove #(get (meta %) :component)
-                    old-obj-tree)
-        nt (remove #(get (meta %) :component)
-                   obj-tree)
-        oct (filter #(get (meta %) :component) old-obj-tree)
-        ct (filter #(get (meta %) :component) obj-tree)]
-    (remove empty? (concat
-                    (materialize-node-diffs! owner ont nt)
-                    (materialize-component-diffs! owner oct ct)))))
-
-(defn materialize-component-diffs! [owner old-obj-tree comps]
+(defn render-components [owner comps]
   ;; (deeb "Mat.Diff")
   ;; (deeb old-obj-tree)
   ;; (deeb "New")
@@ -183,14 +175,17 @@
                ;; (deeb "CMP")
                ;; (deeb component)
                (with-meta (render c) {:component component})))]
-    (materialize-node-diffs! owner old-obj-tree (mapv (fn [[component data options]]
-                                                        (inflate
-                                                         component
-                                                         data
-                                                         options)) comps))))
+    (mapv (fn [[component data options :as q]]
+            (if (:component (meta q))
+              (inflate
+               component
+               data
+               options)
+              q)) comps)))
 
-(defn materialize-node-diffs! [owner old-obj-tree obj-tree]
-  (let [s-old (into #{} (mapv #(take 2 %) old-obj-tree))
+(defn materialize-diffs! [owner old-obj-tree unexpanded-obj-tree]
+  (let [obj-tree (render-components owner unexpanded-obj-tree)
+        s-old (into #{} (mapv #(take 2 %) old-obj-tree))
         s-new (into #{} (mapv #(take 2 %) obj-tree))
         s-to-delete (cs/difference s-old s-new)
         s-to-add (cs/difference s-new s-old)
@@ -204,18 +199,18 @@
         to-update-new (sp/select [sp/ALL #(contains? s-old (take 2 %))]
                                     obj-tree)]
 
-    (deeb "old-obj-tree")
-    (deebm old-obj-tree)
-    (deeb "obj-tree")
-    (deebm obj-tree)
+    ;; (deeb "old-obj-tree")
+    ;; (deebm old-obj-tree)
+    ;; (deeb "obj-tree")
+    ;; (deebm obj-tree)
     ;; (deeb "s-old")
     ;; (deeb s-old)
     ;; (deeb "s-new")
     ;; (deeb s-new)
-    (deeb "S To delete")
-    (deebm s-to-delete)
-    (deeb "S To add")
-    (deebm s-to-add)
+    ;; (deeb "S To delete")
+    ;; (deebm s-to-delete)
+    ;; (deeb "S To add")
+    ;; (deebm s-to-add)
     ;; (deeb "To delete")
     ;; (deebm to-delete)
     (doseq [d to-delete]
@@ -275,9 +270,10 @@
   (if-let [vals (poll! update-chan)]
     (let [new-obj-tree (apply build-root-component! vals)]
       (swap! cnt inc)
-      (deeb (str @cnt ">>>>>>>>>>>>>"))
+      ;;(deeb (str @cnt ">>>>>>>>>>>>>"))
       (clojure.pprint/pprint tpf)
-      (deeb (Thread/currentThread))
+      ;;(deeb Thread/currentThread))
       ;;(deebm (with-meta {:yo "oy"} {:mmmet "aaa!"}))
       (reset! last-obj-tree new-obj-tree)
-      (deebm @last-obj-tree))))
+      ;;(deebm @last-obj-tree)
+      )))
