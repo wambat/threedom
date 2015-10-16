@@ -61,24 +61,24 @@
   ;; (deeb "Slow Find method")
   ;; (deeb klass)
   ;; (deeb name)
-  (deeb "args")
-  (deeb args)
+  ;; (deeb "args")
+  ;; (deeb args)
   (let [methods (.getMethods klass)
         fmethods (filter #(= (.getName %) name) methods)]
-    (deeb fmethods)
+    ;; (deeb fmethods)
     (some #(if (do
-                 (deeb (.getParameterTypes %))
-                 (deeb (mapv (fn [a] (.getClass a)) args))
+                 ;; (deeb (.getParameterTypes %))
+                 ;; (deeb (mapv (fn [a] (.getClass a)) args))
                  (args-satisfies args (.getParameterTypes %)))
              %
              nil) fmethods)
     ))
 
 #_(defn find-method [klass name pklasses]
-  (deeb "Find method")
-  (deeb klass)
-  (deeb name)
-  (deeb pklasses)
+  ;; (deeb "Find method")
+  ;; (deeb klass)
+  ;; (deeb name)
+  ;; (deeb pklasses)
   (if-let [s (slow-find-method klass name pklasses)]
     s
     (try
@@ -99,34 +99,43 @@
 
 (defn get-child-by-name [node name]
   ;; (deeb "GetChild")
+  ;; (deeb node)
   ;; (deeb name)
-  (.getChild node (first name)))
+  (let [c (.getChild node (first name))]
+    (if-not c
+      (do
+        (deeb ["No node" node (first name)])
+        (deeb "BUT children:")
+        (deeb (.getChildren node))))
+    c))
 
 (defn set-node-props! [node setters]
-  (if-not node
-    (throw (ex-info "Set Node Props NONODE" {:node node
-                                             :setters setters})))
-  (doseq [[meth vals] (into [] setters)]
-    (let [s (name meth)
-          vs (mapv #(if (and
-                         (sequential? %)
-                         (>= (count %) 2))
-                      (:node (make-node %))
-                      %) vals)
-          
-          met (find-method (.getClass node) s vs)]
-      (try
-        (.invoke met node (to-array vs))
-        (catch NullPointerException e
-          (throw
-           (ex-info "Set Node Props NPE" {:node node
-                                          :met met
-                                          :params vs})))
-        (catch IllegalArgumentException e
-          (throw
-           (ex-info "Set Node Props ARG" {:node node
-                                          :met met
-                                          :params vs})))))))
+  ;; (throw (ex-info "Set Node Props NONODE" {:node node
+  ;;                                          :setters setters}))
+  (if (not (or (nil? node)
+               (empty? setters)))
+    (doseq [[meth vals] (into [] setters)]
+      (let [s (name meth)
+            vs (mapv #(if (and
+                           (sequential? %)
+                           (>= (count %) 2))
+                        (:node (make-node %))
+                        %) vals)
+            met (find-method (.getClass node) s vs)]
+        (try
+          (.invoke met node (to-array vs))
+          (catch NullPointerException e
+            (throw
+             (ex-info "Set Node Props NPE" {:node node
+                                            :met met
+                                            :params vs})))
+          (catch IllegalArgumentException e
+            (throw
+             (ex-info "Set Node Props ARG" {:node node
+                                            :met met
+                                            :params vs}))))))
+    [ "Set Node Props NONODE" {:node node
+                                            :setters setters}]))
 
 (defn make-node [[klass konstructor setters children :as data]]
 
@@ -147,6 +156,8 @@
 
   ;; (deeb "Detaching")
   ;; (deeb node)
+  ;; (deeb "Name")
+  ;; (deeb (get-in descr [1 0]))
   ;; (deeb "Descr")
   ;; (deebm descr)
   (.detachChildNamed node (get-in descr [1 0])))
@@ -218,10 +229,10 @@
         to-create (sp/select [sp/ALL #(not (contains? s-old (take 2 %)))]
                                 obj-tree)
         ;;TODO: This should be sorted out by some key
-        to-update-old (sp/select [sp/ALL #(contains? s-new (take 2 %))]
-                                    old-obj-tree)
-        to-update-new (sp/select [sp/ALL #(contains? s-old (take 2 %))]
-                                    obj-tree)]
+        to-update-old (sort-by second (sp/select [sp/ALL #(contains? s-new (take 2 %))]
+                                                 old-obj-tree))
+        to-update-new (sort-by second (sp/select [sp/ALL #(contains? s-old (take 2 %))]
+                                                 obj-tree))]
 
     ;; (deeb "old-obj-tree")
     ;; (deebm old-obj-tree)
@@ -242,6 +253,8 @@
     (let [new-nodes-obj-tree (make-nodes! owner to-create)
           updated-nodes-obj-tree
           (mapv (fn [o n]
+                  ;; (deeb "Upd. Props.")
+                  ;; (deeb o)
                   (update-props! (get-child-by-name owner (get o 1 "NOT_FOUND"))
                                  (get o 2 {})
                                  (get n 2 {}))
@@ -282,7 +295,7 @@
   (remove-watch state-atom :watcher)
   (add-watch state-atom :watcher
              (fn [key atm old-state new-state]
-               (deeb "<<<<<<<<<<CH")
+               ;; (deeb "<<<<<<<<<<CH")
                (>!! update-chan [component target @last-obj-tree new-state options])
                ;;(handle-diffs f target old-state new-state options)
                ))
@@ -294,7 +307,7 @@
   (if-let [vals (poll! update-chan)]
     (let [new-obj-tree (apply build-root-component! vals)]
       (swap! cnt inc)
-      ;;(deeb (str @cnt ">>>>>>>>>>>>>"))
+     ;; (deeb (str @cnt ">>>>>>>>>>>>>"))
       (clojure.pprint/pprint tpf)
       ;;(deeb Thread/currentThread))
       ;;(deebm (with-meta {:yo "oy"} {:mmmet "aaa!"}))
