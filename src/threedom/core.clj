@@ -102,11 +102,11 @@
   ;; (deeb node)
   ;; (deeb name)
   (let [c (.getChild node (first name))]
-    (if-not c
-      (do
-        (deeb ["No node" node (first name)])
-        (deeb "BUT children:")
-        (deeb (.getChildren node))))
+    ;; (if-not c
+    ;;   (do
+    ;;     (deeb ["No node" node (first name)])
+    ;;     (deeb "BUT children:")
+    ;;     (deeb (.getChildren node))))
     c))
 
 (defn set-node-props! [node setters]
