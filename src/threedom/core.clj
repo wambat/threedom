@@ -2,7 +2,7 @@
   (:require [clojure.data :as cd]
             [clojure.set :as cs]
             [clojure.pprint :refer [pprint]]
-            [clojure.core.async :refer [mult poll! go tap untap chan alt! >!! <!! filter> onto-chan pipe close!] :as async]
+            [clojure.core.async :refer [mult poll! go tap untap chan alt! >!! <!! filter> onto-chan pipe close! sliding-buffer] :as async]
             [com.rpl.specter :as sp])
   (:import [com.jme3 app.SimpleApplication
             material.Material
@@ -38,7 +38,7 @@
 (defn deeb [v]
   (clojure.pprint/pprint v)
   )
-(def update-chan (chan 1))
+(def update-chan (chan (sliding-buffer 1)))
 
 (defn construct [klass & args]
   ;; (deeb "Constructing")
@@ -307,8 +307,7 @@
   (if-let [vals (poll! update-chan)]
     (let [new-obj-tree (apply build-root-component! vals)]
       (swap! cnt inc)
-     ;; (deeb (str @cnt ">>>>>>>>>>>>>"))
-      (clojure.pprint/pprint tpf)
+      ;;(deeb (str @cnt ">>>>>>>>>>>>>"))
       ;;(deeb Thread/currentThread))
       ;;(deebm (with-meta {:yo "oy"} {:mmmet "aaa!"}))
       (reset! last-obj-tree new-obj-tree)
